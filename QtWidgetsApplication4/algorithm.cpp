@@ -331,13 +331,12 @@ void decimateMesh_Manual(MyMesh& mesh, float targetReduction) {
 	}
 }
 
-
-void remesh(MyMesh& mesh, std::vector<std::vector<int>>& E, double eps = 1e-4);
-void work(int begin, int end, double lambda, MyMesh& mesh, MyMesh& smoothedMesh, std::mutex& mutex, std::vector<std::vector<int>>& E);
 void laplacianSmoothing(MyMesh& mesh, int iterations, double lambda) {
-	int thread_num = 20;
-	size_t n = mesh.n_vertices();
-	std::vector<std::vector<int>> E(n);
+	size_t n = mesh.n_vertices(); // 获取网格顶点的数量
+	size_t m = mesh.n_faces();
+	std::vector<std::vector<int>> E(n); // 初始化一个邻接表E，用于存储每个顶点的邻居顶点索引
+
+	// 遍历网格的所有顶点，填充邻接表E
 	for (auto v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
 		MyMesh::VertexHandle vh = *v_it;
 		for (auto vv_it = mesh.vv_iter(vh); vv_it.is_valid(); ++vv_it) {
@@ -345,73 +344,48 @@ void laplacianSmoothing(MyMesh& mesh, int iterations, double lambda) {
 			E[vh.idx()].emplace_back(vh_to.idx());
 		}
 	}
-	std::mutex mutex{};
+	// 进行迭代平滑处理
 	while (iterations--) {
-		MyMesh smoothedMesh = mesh;
-		int size_b = (n + thread_num - 1) / thread_num;
-		int groupnum = (n + size_b - 1) / size_b;
+		MyMesh smoothedMesh = mesh; // 创建一个平滑后的网格副本
 		{
-			std::vector<std::thread> thread_pool;
-			for (int i = 0; i < groupnum; i++) {
-				int begin = i * size_b;
-				int end = (i + 1) * size_b;
-				end = std::min(end, (int)n);
-				thread_pool.emplace_back(work, begin, end, lambda, std::ref(mesh),
-					std::ref(smoothedMesh), std::ref(mutex), std::ref(E));
-			}
-			for (int i = 0; i < thread_pool.size(); i++) {
-				thread_pool[i].join();
-			}
+				int begin = 0; // 计算每个线程的起始顶点索引
+				int end = n; // 计算每个线程的结束顶点索引
+				end = std::min(end, (int)n); // 确保结束索引不超过顶点总数
+				for (int i = begin; i < end; i++) {
+					MyMesh::VertexHandle vh = mesh.vertex_handle(i); // 获取当前顶点的句柄
+					// 获取当前顶点的原始位置
+					OpenMesh::DefaultTraits::Point origin_tmp = mesh.point(vh);
+					Eigen::Vector3d origin{ origin_tmp[0], origin_tmp[1], origin_tmp[2] };
+
+					// 初始化用于计算新位置的变量
+					Eigen::Vector3d sum(0, 0, 0);
+					double totalWeight = lambda + E[vh.idx()].size(); // 计算权重总和
+
+					// 遍历当前顶点的所有邻居顶点，累加它们的位置
+					for (auto j : E[i]) {
+						MyMesh::VertexHandle vh_to = mesh.vertex_handle(j);
+						auto temp = mesh.point(vh_to);
+						Eigen::Vector3d tmp{ temp[0], temp[1], temp[2] };
+						sum += tmp;
+					}
+
+					// 添加当前顶点的位置，权重为lambda
+					sum += lambda * Eigen::Vector3d{ origin[0], origin[1], origin[2] };
+
+					// 计算新位置
+					Eigen::Vector3d new_pos = sum / totalWeight;
+
+					// 设置平滑后网格中对应顶点的新位置
+					MyMesh::VertexHandle vh_from = smoothedMesh.vertex_handle(vh.idx());
+					smoothedMesh.set_point(vh_from, MyMesh::Point(new_pos[0], new_pos[1], new_pos[2]));
+				}
 		}
-		mesh = std::move(smoothedMesh);
-		remesh(mesh, E, 1e-7);
-		n = mesh.n_vertices();
+		mesh = smoothedMesh; // 更新网格为平滑后的网格
+		n = mesh.n_vertices(); // 更新顶点数量
+		size_t mm = mesh.n_faces();
 	}
 }
-void remesh(MyMesh& mesh,	std::vector<std::vector<int>>& E,double eps) {
 
-	size_t sub_face = 0;
-	for (auto face : mesh.all_faces()) {
-		if (mesh.calc_face_area(face) < eps) sub_face++;
-	}
-	if (sub_face < 0.1 * mesh.n_faces()) return;
-	E.resize(mesh.n_vertices(), std::vector<int>{});
-	for (auto v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
-		MyMesh::VertexHandle vh = *v_it;
-		for (auto vv_it = mesh.vv_iter(vh); vv_it.is_valid(); ++vv_it) {
-			MyMesh::VertexHandle vh_to = *vv_it;
-			E[vh.idx()].emplace_back(vh_to.idx());
-		}
-	}
-}
-
-void work(int begin, int end, double lambda, MyMesh& mesh, MyMesh& smoothedMesh, std::mutex& mutex, std::vector<std::vector<int>>& E) {
-
-	for (int i = begin; i < end; i++) {
-		MyMesh::VertexHandle vh = mesh.vertex_handle(i);
-		OpenMesh::DefaultTraits::Point origin_tmp = mesh.point(vh);
-		Eigen::Vector3d sum(0, 0, 0), origin{ origin_tmp[0], origin_tmp[1], origin_tmp[2] };
-
-		double totalWeight = lambda + E[vh.idx()].size();
-		for (auto j : E[i]) {
-			MyMesh::VertexHandle vh_to = mesh.vertex_handle(j);
-
-			auto temp = mesh.point(vh_to);
-			Eigen::Vector3d tmp{ temp[0], temp[1], temp[2] };
-
-			sum += tmp;
-		}
-
-		auto temp = mesh.point(vh);
-		sum += lambda * Eigen::Vector3d{ temp[0], temp[1], temp[2] };
-
-		Eigen::Vector3d new_pos = sum / totalWeight;
-		{
-			MyMesh::VertexHandle vh_from = smoothedMesh.vertex_handle(vh.idx());
-			smoothedMesh.set_point(vh_from, MyMesh::Point(new_pos[0], new_pos[1], new_pos[2]));
-		}
-	}
-}
 
 
 void Algorithm::setLambda(double new_val) {
