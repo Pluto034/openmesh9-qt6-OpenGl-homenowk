@@ -26,7 +26,7 @@ class QTModelViewer : public QMainWindow
     Q_OBJECT
 
 public:
-    QString old_iterations, old_lambda , old_decimateRate;
+    QString old_num, old_lambda , old_decimateRate;
     explicit QTModelViewer(QWidget* parent = nullptr);
     ~QTModelViewer();
 protected:
@@ -36,18 +36,15 @@ signals:
 private slots:
     void check_text_int(const QString& new_val);
     void check_text_double1(const QString& new_val);
-    void check_text_double2(const QString& new_val);
     void on_actionOpen_File_triggered();
 private:
     Ui::QTModelViewer* ui;
-    QSlider* createSlider();
     QPushButton* createButton_laplacianSmoothing();
-    QPushButton* createButton_decimateMesh_Official();
-    QPushButton* createButton_decimateMesh_Manual();
+
     QLineEdit* createEdit(QString defaultVal);
     Algorithm* algorithm;
 
-    QLineEdit* iterations, * lambda, * decimateRate;
+    QLineEdit* num, * lambda;
 
     QString currentFile = "";
 };

@@ -56,24 +56,16 @@ public:
 
     std::string cur_source;
     void NewAlgorithm();
-    void KeyControls(QKeyEvent* event);
     void MouseControls(QMouseEvent* event, QEvent::Type eventType);
 
 
 public slots:
-    void LightXChanged(int angle);
-    void LightYChanged(int angle);
-    void LightZChanged(int angle);
     void start_laplacianSmoothing(bool checked);
-    void start_decimateMesh_Official(bool checked);
-    void start_decimateMesh_Manual(bool checked);
+
 
 private:
-    // 鼠标上一次的位置
     QPoint last_pos;
-    // 上一次更新的时候鼠标是否在边界内
     bool is_in_sence;
-    // 上一次更新的时候鼠标左键是否被按下
     bool is_in_press;
     Qt3DRender::QMesh* curMesh;
 
@@ -89,7 +81,7 @@ private:
     void SetupMaterial();
     void SetupLighting();
 
-    void scale(MyMesh& mesh);
+    void Tocenter(MyMesh& mesh);
 
     double lambda;
     int iters;
